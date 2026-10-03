@@ -4,7 +4,7 @@ import { STROKE_R } from './glyphs.js';
 import { Piece, Board } from './engine.js';
 import { getLevel, loadShippedLevels } from './levels.js';
 import { PALETTE } from './generator.js';
-import { layoutPool, drawBackground, drawPool, drawPiece, drawGhostPath, Particles } from './render.js';
+import { layoutPool, drawScene, drawRipples, drawPiece, drawGhostPath, Particles, clearSpriteCache } from './render.js';
 import { sfx, haptic, settings } from './audio.js';
 
 const SAVE_KEY = 'wordpool.v1';
@@ -174,6 +174,8 @@ export class Game {
   // ---------- geometry helpers ----------
   resize() {
     const dpr = Math.min(3, window.devicePixelRatio || 1);
+    this.dpr = dpr;
+    clearSpriteCache();
     const W = this.root.clientWidth, H = this.root.clientHeight;
     this.canvas.width = Math.round(W * dpr); this.canvas.height = Math.round(H * dpr);
     this.canvas.style.width = W + 'px'; this.canvas.style.height = H + 'px';
@@ -374,7 +376,8 @@ export class Game {
     this.last = t;
     const ctx = this.ctx;
     try {
-      drawBackground(ctx, this.W, this.H, t);
+      const inPool = this.board && (this.screen === 'play' || this.screen === 'win');
+      drawScene(ctx, this.W, this.H, inPool ? this.rect : null, this.dpr);
       if (this.screen === 'home' || this.screen === 'levels') this.drawTitle(t);
       if (this.board && (this.screen === 'play' || this.screen === 'win')) this.drawPlay(ctx, t);
       this.particles.step(dt);
@@ -389,12 +392,12 @@ export class Game {
     ctx.clearRect(0, 0, 400, 200);
     this.titleBoard.pieces.forEach((p, i) => {
       const off = { x: 0, y: Math.sin(t / 600 + i * 0.8) * 0.06 };
-      drawPiece(ctx, p, rect, { off, lift: 0.2 + Math.sin(t / 600 + i * 0.8) * 0.2 });
+      drawPiece(ctx, p, rect, { off, lift: 0.2 + Math.sin(t / 600 + i * 0.8) * 0.2, dpr: Math.min(2, window.devicePixelRatio || 1) });
     });
   }
   drawPlay(ctx, t) {
     const rect = this.rect;
-    drawPool(ctx, rect, t);
+    drawRipples(ctx, rect, t);
     const now = performance.now();
     // advance animations
     const done = this.anims.filter((a) => now - a.t0 >= a.dur);

@@ -26,18 +26,16 @@ export function layoutPool(board, area, pad = 18) {
   return { x: area.x + (area.w - w) / 2, y: area.y + (area.h - h) / 2, w, h, scale };
 }
 
-export function drawBackground(ctx, W, H, t) {
+function paintBackground(ctx, W, H) {
   const g = ctx.createLinearGradient(0, 0, 0, H);
   g.addColorStop(0, '#0f1b3d');
   g.addColorStop(1, '#070b1c');
   ctx.fillStyle = g;
   ctx.fillRect(0, 0, W, H);
-  // soft drifting blobs
   ctx.save();
   ctx.globalAlpha = 0.18;
   for (let i = 0; i < 3; i++) {
-    const x = W * (0.2 + 0.3 * i) + Math.sin(t / 4000 + i) * 40;
-    const y = H * (0.25 + 0.25 * i) + Math.cos(t / 5000 + i * 2) * 50;
+    const x = W * (0.2 + 0.3 * i), y = H * (0.25 + 0.25 * i);
     const rg = ctx.createRadialGradient(x, y, 0, x, y, W * 0.45);
     rg.addColorStop(0, ['#4c6fff', '#38d9a9', '#da77f2'][i]);
     rg.addColorStop(1, 'rgba(0,0,0,0)');
@@ -47,11 +45,10 @@ export function drawBackground(ctx, W, H, t) {
   ctx.restore();
 }
 
-export function drawPool(ctx, rect, t) {
+function paintPool(ctx, rect) {
   const { x, y, w, h } = rect;
   const r = Math.min(28, w * 0.08);
   ctx.save();
-  // rim shadow
   ctx.shadowColor = 'rgba(0,0,0,0.55)';
   ctx.shadowBlur = 30;
   ctx.shadowOffsetY = 14;
@@ -59,7 +56,6 @@ export function drawPool(ctx, rect, t) {
   ctx.fillStyle = '#1b2a5a';
   ctx.fill();
   ctx.restore();
-  // rim
   ctx.save();
   roundRect(ctx, x - 10, y - 10, w + 20, h + 20, r + 8);
   const rim = ctx.createLinearGradient(x, y - 10, x, y + h + 10);
@@ -67,7 +63,6 @@ export function drawPool(ctx, rect, t) {
   rim.addColorStop(1, '#13204a');
   ctx.fillStyle = rim;
   ctx.fill();
-  // water
   roundRect(ctx, x, y, w, h, r);
   const g = ctx.createLinearGradient(x, y, x + w, y + h);
   g.addColorStop(0, '#0d6fa8');
@@ -76,25 +71,48 @@ export function drawPool(ctx, rect, t) {
   ctx.fillStyle = g;
   ctx.fill();
   ctx.clip();
-  // caustic ripples
-  ctx.globalAlpha = 0.09;
-  ctx.strokeStyle = '#bff3ff';
-  ctx.lineWidth = 2;
-  for (let i = 0; i < 7; i++) {
-    ctx.beginPath();
-    for (let px = 0; px <= w; px += 8) {
-      const py = (h / 7) * i + h / 14 + Math.sin(px / 38 + t / 900 + i * 1.7) * 6 + Math.cos(px / 71 - t / 1300) * 4;
-      if (px === 0) ctx.moveTo(x + px, y + py); else ctx.lineTo(x + px, y + py);
-    }
-    ctx.stroke();
-  }
-  // inner shadow at the top edge
-  ctx.globalAlpha = 1;
   const inner = ctx.createLinearGradient(x, y, x, y + 40);
   inner.addColorStop(0, 'rgba(0,0,0,0.35)');
   inner.addColorStop(1, 'rgba(0,0,0,0)');
   ctx.fillStyle = inner;
   ctx.fillRect(x, y, w, 40);
+  ctx.restore();
+}
+
+// The background and pool are static between resizes, so they are painted once into a layer.
+let sceneLayer = null;
+export function drawScene(ctx, W, H, rect, dpr) {
+  const key = `${W}|${H}|${rect ? `${rect.x.toFixed(1)},${rect.y.toFixed(1)},${rect.w.toFixed(1)},${rect.h.toFixed(1)}` : '-'}|${dpr}`;
+  if (!sceneLayer || sceneLayer.key !== key) {
+    const c = document.createElement('canvas');
+    c.width = Math.ceil(W * dpr); c.height = Math.ceil(H * dpr);
+    const cx = c.getContext('2d');
+    cx.scale(dpr, dpr);
+    paintBackground(cx, W, H);
+    if (rect) paintPool(cx, rect);
+    sceneLayer = { key, canvas: c };
+  }
+  ctx.drawImage(sceneLayer.canvas, 0, 0, W, H);
+}
+
+/** Animated caustic ripples on the water (cheap, drawn live). */
+export function drawRipples(ctx, rect, t) {
+  const { x, y, w, h } = rect;
+  const r = Math.min(28, w * 0.08);
+  ctx.save();
+  roundRect(ctx, x, y, w, h, r);
+  ctx.clip();
+  ctx.globalAlpha = 0.09;
+  ctx.strokeStyle = '#bff3ff';
+  ctx.lineWidth = 2;
+  for (let i = 0; i < 7; i++) {
+    ctx.beginPath();
+    for (let px = 0; px <= w; px += 10) {
+      const py = (h / 7) * i + h / 14 + Math.sin(px / 38 + t / 900 + i * 1.7) * 6 + Math.cos(px / 71 - t / 1300) * 4;
+      if (px === 0) ctx.moveTo(x + px, y + py); else ctx.lineTo(x + px, y + py);
+    }
+    ctx.stroke();
+  }
   ctx.restore();
 }
 
@@ -108,31 +126,14 @@ function strokePath(ctx, pts, ox, oy, scale) {
   for (let i = 1; i < pts.length; i++) ctx.lineTo(ox + pts[i].x * scale, oy + pts[i].y * scale);
 }
 
-/**
- * Draw a letter piece.
- * opts: { off:{x,y} (pool units), lift (0..1), alpha, scaleMul, flash (0..1 white), tint }
- */
-export function drawPiece(ctx, piece, rect, opts = {}) {
-  const { scale } = rect;
-  const off = opts.off || { x: 0, y: 0 };
-  const lift = opts.lift || 0;
-  const alpha = opts.alpha ?? 1;
-  const mul = opts.scaleMul ?? 1;
-  const g = piece.g;
-  const cx = rect.x + (piece.pos.x + off.x + g.center.x) * scale;
-  const cy = rect.y + (piece.pos.y + off.y + g.center.y) * scale;
-  const s = scale * mul;
-  const ox = cx - g.center.x * s, oy = cy - g.center.y * s - lift * 10;
+/** Paint a glyph (shadow, extrusion, face, highlight) with its box origin at (ox, oy). */
+function paintGlyph(ctx, g, color, ox, oy, s, lift) {
   const lw = STROKE_R * 2 * s;
   const depth = Math.max(3, lw * 0.28) + lift * 6;
-  const color = opts.tint || piece.color;
-
   ctx.save();
-  ctx.globalAlpha = alpha;
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
   ctx.lineWidth = lw;
-
   // drop shadow
   ctx.save();
   ctx.translate(2 + lift * 6, depth + 6 + lift * 10);
@@ -141,7 +142,6 @@ export function drawPiece(ctx, piece, rect, opts = {}) {
   for (const st of g.strokes) { strokePath(ctx, st.pts, ox, oy, s); ctx.stroke(); }
   ctx.filter = 'none';
   ctx.restore();
-
   // extruded side
   ctx.strokeStyle = shade(color, -0.45);
   for (let d = depth; d >= 1; d -= 1.5) {
@@ -163,11 +163,58 @@ export function drawPiece(ctx, piece, rect, opts = {}) {
   ctx.translate(-lw * 0.14, -lw * 0.18);
   for (const st of g.strokes) { strokePath(ctx, st.pts, ox, oy, s); ctx.stroke(); }
   ctx.restore();
-  // flash overlay (bump / locked feedback)
+  ctx.restore();
+}
+
+// Pre-rendered letter sprites: blur filters are expensive, so each letter is painted once per
+// (scale, lift level) into an offscreen canvas and blitted every frame.
+const spriteCache = new Map();
+export function clearSpriteCache() { spriteCache.clear(); }
+function pieceSprite(piece, scale, lift, dpr) {
+  const key = `${piece.ch}|${piece.color}|${Math.round(scale * 4)}|${lift}|${dpr}`;
+  let sp = spriteCache.get(key);
+  if (sp) return sp;
+  const g = piece.g;
+  const pad = 36 + lift * 18;
+  const w = g.w * scale + pad * 2, h = g.h * scale + pad * 2;
+  const c = document.createElement('canvas');
+  c.width = Math.ceil(w * dpr); c.height = Math.ceil(h * dpr);
+  const cx = c.getContext('2d');
+  cx.scale(dpr, dpr);
+  paintGlyph(cx, g, piece.color, pad, pad, scale, lift);
+  sp = { canvas: c, pad, w, h };
+  if (spriteCache.size > 160) spriteCache.clear();
+  spriteCache.set(key, sp);
+  return sp;
+}
+
+/**
+ * Draw a letter piece.
+ * opts: { off:{x,y} (pool units), lift (0..1+), alpha, scaleMul, flash (0..1), flashColor, dpr }
+ */
+export function drawPiece(ctx, piece, rect, opts = {}) {
+  const { scale } = rect;
+  const off = opts.off || { x: 0, y: 0 };
+  const lift = opts.lift || 0;
+  const alpha = opts.alpha ?? 1;
+  const mul = opts.scaleMul ?? 1;
+  const dpr = opts.dpr || Math.min(3, (typeof window !== 'undefined' && window.devicePixelRatio) || 1);
+  const g = piece.g;
+  const cx = rect.x + (piece.pos.x + off.x + g.center.x) * scale;
+  const cy = rect.y + (piece.pos.y + off.y + g.center.y) * scale - lift * 10;
+  // lift is bucketed so the cache stays small; the vertical offset above stays continuous
+  const liftKey = Math.min(1.5, Math.round(lift * 4) / 4);
+  const sp = pieceSprite(piece, scale, liftKey, dpr);
+  const s = scale * mul;
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  // glyph box origin (CSS px) for the scaled sprite, keeping the glyph centre fixed
+  const ox = cx - g.center.x * s, oy = cy - g.center.y * s;
+  ctx.drawImage(sp.canvas, ox - sp.pad * mul, oy - sp.pad * mul, sp.w * mul, sp.h * mul);
   if (opts.flash) {
-    ctx.lineWidth = lw;
+    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    ctx.lineWidth = STROKE_R * 2 * s;
     ctx.strokeStyle = opts.flashColor || `rgba(255,255,255,${opts.flash})`;
-    ctx.globalAlpha = alpha * opts.flash;
     for (const st of g.strokes) { strokePath(ctx, st.pts, ox, oy, s); ctx.stroke(); }
   }
   ctx.restore();
