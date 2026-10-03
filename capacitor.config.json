@@ -1,0 +1,13 @@
+{
+  "appId": "com.cyberallante.wordpool",
+  "appName": "Word Pool",
+  "webDir": "web",
+  "ios": {
+    "contentInset": "never",
+    "backgroundColor": "#0f1b3d",
+    "preferredContentMode": "mobile"
+  },
+  "server": {
+    "iosScheme": "capacitor"
+  }
+}

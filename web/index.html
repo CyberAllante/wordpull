@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+  <title>Word Pool</title>
+  <meta name="description" content="Word Pool — pull every letter out of the pool by drawing its own shape." />
+  <meta name="theme-color" content="#0f1b3d" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Word Pool" />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="icons/icon-180.png" />
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <div id="app">
+    <canvas id="game"></canvas>
+
+    <header id="hud" class="hidden">
+      <div class="hud-row">
+        <button id="btn-home" class="icon" aria-label="Home">‹</button>
+        <div id="hud-level" class="hud-title">Level 1</div>
+        <div class="hud-actions">
+          <button id="btn-hint" class="icon" aria-label="Hint">💡</button>
+          <button id="btn-restart" class="icon" aria-label="Restart">↻</button>
+        </div>
+      </div>
+      <div id="word-row" class="word-row"></div>
+      <div id="tutorial" class="tutorial"></div>
+    </header>
+
+    <section class="screen active" data-screen="home">
+      <div class="panel">
+        <canvas id="title-canvas" class="title-canvas"></canvas>
+        <h1 class="sr-only">Word Pool</h1>
+        <p id="home-stats" class="muted">Pull every letter out of the pool.</p>
+        <button id="btn-play" class="primary">Play</button>
+        <button id="btn-levels" class="secondary">Levels</button>
+        <div class="settings">
+          <button id="tgl-sound" class="ghost">Sound: On</button>
+          <button id="tgl-haptics" class="ghost">Haptics: On</button>
+          <button id="btn-reset" class="ghost danger">Reset progress</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="screen" data-screen="levels">
+      <div class="panel wide">
+        <div class="panel-head">
+          <button id="btn-levels-back" class="icon" aria-label="Back">‹</button>
+          <h2>Levels</h2>
+        </div>
+        <div id="level-grid" class="level-grid"></div>
+      </div>
+    </section>
+
+    <section class="screen" data-screen="win">
+      <div class="panel win">
+        <div class="eyebrow">Word cleared</div>
+        <div id="win-word" class="win-word">WORD</div>
+        <div id="win-stars" class="stars">★★★</div>
+        <div id="win-meta" class="muted">12s · 0 bumps</div>
+        <button id="btn-next" class="primary">Next level</button>
+        <div class="row">
+          <button id="btn-win-replay" class="secondary">Replay</button>
+          <button id="btn-win-home" class="secondary">Home</button>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
