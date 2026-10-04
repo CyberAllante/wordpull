@@ -1,5 +1,6 @@
 // Procedural level generator: word -> packed, solvable pool. Deterministic per level number.
-import { Board, Piece, CLEARANCE, TOUCH, piecesWithin } from './engine.js';
+import { Board, Piece, CLEARANCE, TOUCH, STROKE_R, piecesWithin } from './engine.js';
+import { segSegDist2 } from './geom.js';
 import { WORDS } from './words.js';
 
 /** Small seeded PRNG (mulberry32). */
@@ -91,41 +92,79 @@ export function pack(word, density, r) {
   for (let i = order.length - 1; i > 0; i--) { const j = r.int(i + 1); [order[i], order[j]] = [order[j], order[i]]; }
   order.sort((a, b) => (b.closed ? 1 : 0) - (a.closed ? 1 : 0));
   const solution = [];
+  // For every placed letter, the exit corridors (open ends) that are still clear. A later letter
+  // that sits in one of those corridors creates a dependency: it must leave first.
+  const corridors = new Map(); // piece -> [{ a, b }] world segments of clear corridors
+  const corridorOf = (p, dir) => {
+    const a = { x: p.pos.x + dir.headPt0.x, y: p.pos.y + dir.headPt0.y };
+    const t = dir.exitTan;
+    // run the ray until it leaves the pool
+    let d = 0;
+    while (d < 20) { const x = a.x + t.x * d, y = a.y + t.y * d; if (x < 0 || x > w || y < 0 || y > h) break; d += 0.05; }
+    return { a, b: { x: a.x + t.x * d, y: a.y + t.y * d } };
+  };
+  const segsHitCorridor = (segs, cor) => {
+    const lim = (2 * STROKE_R + 0.02) ** 2;
+    for (const [p1, p2] of segs) if (segSegDist2(p1, p2, cor.a, cor.b) < lim) return true;
+    return false;
+  };
   for (const p of order) {
     const placed = board.pieces;
     let best = null, bestScore = -Infinity, found = 0;
     const cx = placed.length ? placed.reduce((s, q) => s + q.center.x, 0) / placed.length : w / 2;
     const cy = placed.length ? placed.reduce((s, q) => s + q.center.y, 0) / placed.length : h / 2;
-    const tries = placed.length ? 80 : 8;
-    for (let t = 0; t < tries && found < 8; t++) {
+    const tries = placed.length ? 90 : 8;
+    for (let t = 0; t < tries && found < 10; t++) {
       const spread = placed.length ? 0.5 + (t / tries) * Math.max(w, h) * 0.9 : 0.5;
       let x = cx - p.g.w / 2 + r.range(-spread, spread);
       let y = cy - p.g.h / 2 + r.range(-spread, spread);
+      // half the time, aim straight into an earlier letter's clear corridor to build a dependency chain
+      const withCors = [...corridors.entries()].filter(([, cs]) => cs.length);
+      if (withCors.length && r() < 0.55) {
+        const [, cs] = r.pick(withCors);
+        const cor = r.pick(cs);
+        const cl = Math.hypot(cor.b.x - cor.a.x, cor.b.y - cor.a.y);
+        const d = r.range(0.25, Math.max(0.3, cl - 0.1));
+        const ux = (cor.b.x - cor.a.x) / (cl || 1), uy = (cor.b.y - cor.a.y) / (cl || 1);
+        x = cor.a.x + ux * d - p.g.w / 2 + r.range(-0.25, 0.25);
+        y = cor.a.y + uy * d - p.g.h / 2 + r.range(-0.25, 0.25);
+      }
       x = Math.min(Math.max(x, margin), w - p.g.w - margin);
       y = Math.min(Math.max(y, margin), h - p.g.h - margin);
       p.pos = { x, y };
-      if (board.collider(p, null, CLEARANCE) >= 0) continue;
+      if (board.collider(p, CLEARANCE) >= 0) continue;
       let touching = 0;
       for (const q of placed) if (piecesTouch(p, q)) touching++;
-      // a closed letter must be free when its turn comes: nothing placed before it may touch it
       if (p.closed && touching) continue;
-      // tight puzzles: once letters exist, only accept spots that lock onto something
       if (placed.length && !p.closed && !touching && t < tries * 0.7) continue;
-      let clearDirs = 0;
+      let clear = [];
       if (!p.closed) {
         for (const d of p.dirs) {
           const sw = board.sweep(p, d);
-          if (sw.sBlock === Infinity && sw.sExit < Infinity) clearDirs++;
+          if (sw.sBlock === Infinity && sw.sExit < Infinity) clear.push(d);
         }
-        if (!clearDirs) continue;
+        if (!clear.length) continue;
+      }
+      // how many earlier letters does this spot lock in (all their clear corridors blocked)?
+      const segs = p.restSegs();
+      let locks = 0, blocked = 0;
+      for (const [q, cors] of corridors) {
+        if (!cors.length) continue;
+        const left = cors.filter((c) => !segsHitCorridor(segs, c)).length;
+        blocked += cors.length - left;
+        if (left === 0) locks++;
       }
       found++;
       const dc = Math.hypot(p.center.x - cx, p.center.y - cy);
-      const score = touching * 3 - dc + (clearDirs === 1 ? 1.2 : 0) - (p.closed ? dc : 0) + r() * 0.4;
-      if (score > bestScore) { bestScore = score; best = { x, y }; }
+      const score = touching * 2 + locks * 4 + blocked * 1.5 - dc + (clear.length === 1 ? 1 : 0) - (p.closed ? dc : 0) + r() * 0.4;
+      if (score > bestScore) { bestScore = score; best = { x, y, clear }; }
     }
     if (!best) return null;
-    p.pos = best;
+    p.pos = { x: best.x, y: best.y };
+    // update corridors of earlier letters, then register this letter's own
+    const segs = p.restSegs();
+    for (const [q, cors] of corridors) corridors.set(q, cors.filter((c) => !segsHitCorridor(segs, c)));
+    corridors.set(p, best.clear.map((d) => corridorOf(p, d)));
     board.pieces.push(p);
     solution.push(p);
   }
@@ -135,7 +174,7 @@ export function pack(word, density, r) {
 }
 
 function piecesTouch(a, b) {
-  return piecesWithin(a, null, b, TOUCH);
+  return piecesWithin(a, b, TOUCH);
 }
 
 /**

@@ -126,8 +126,9 @@ function strokePath(ctx, pts, ox, oy, scale) {
   for (let i = 1; i < pts.length; i++) ctx.lineTo(ox + pts[i].x * scale, oy + pts[i].y * scale);
 }
 
-/** Paint a glyph (shadow, extrusion, face, highlight) with its box origin at (ox, oy). */
-function paintGlyph(ctx, g, color, ox, oy, s, lift) {
+/** Paint strokes (shadow, extrusion, face, highlight) with the glyph box origin at (ox, oy). */
+function paintStrokes(ctx, strokes, hGlyph, color, ox, oy, s, lift) {
+  const g = { strokes, h: hGlyph };
   const lw = STROKE_R * 2 * s;
   const depth = Math.max(3, lw * 0.28) + lift * 6;
   ctx.save();
@@ -181,7 +182,7 @@ function pieceSprite(piece, scale, lift, dpr) {
   c.width = Math.ceil(w * dpr); c.height = Math.ceil(h * dpr);
   const cx = c.getContext('2d');
   cx.scale(dpr, dpr);
-  paintGlyph(cx, g, piece.color, pad, pad, scale, lift);
+  paintStrokes(cx, g.strokes, g.h, piece.color, pad, pad, scale, lift);
   sp = { canvas: c, pad, w, h };
   if (spriteCache.size > 160) spriteCache.clear();
   spriteCache.set(key, sp);
@@ -190,7 +191,8 @@ function pieceSprite(piece, scale, lift, dpr) {
 
 /**
  * Draw a letter piece.
- * opts: { off:{x,y} (pool units), lift (0..1+), alpha, scaleMul, flash (0..1), flashColor, dpr }
+ * opts: { body:{pts,dots} (rope body in glyph-local units, painted live), off:{x,y} (pool units),
+ *         lift (0..1+), alpha, scaleMul, flash (0..1), flashColor, dpr }
  */
 export function drawPiece(ctx, piece, rect, opts = {}) {
   const { scale } = rect;
@@ -200,6 +202,21 @@ export function drawPiece(ctx, piece, rect, opts = {}) {
   const mul = opts.scaleMul ?? 1;
   const dpr = opts.dpr || Math.min(3, (typeof window !== 'undefined' && window.devicePixelRatio) || 1);
   const g = piece.g;
+  if (opts.body) {
+    // a moving rope: paint its current body directly (one letter per frame at most)
+    const ox = rect.x + (piece.pos.x + off.x) * scale, oy = rect.y + (piece.pos.y + off.y) * scale - lift * 10;
+    const strokes = [{ pts: opts.body.pts }, ...opts.body.dots.map((q) => ({ pts: [q] }))];
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    paintStrokes(ctx, strokes, g.h, piece.color, ox, oy, scale, lift);
+    if (opts.flash) {
+      ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.lineWidth = STROKE_R * 2 * scale;
+      ctx.strokeStyle = opts.flashColor || `rgba(255,255,255,${opts.flash})`;
+      for (const st of strokes) { strokePath(ctx, st.pts, ox, oy, scale); ctx.stroke(); }
+    }
+    ctx.restore();
+    return;
+  }
   const cx = rect.x + (piece.pos.x + off.x + g.center.x) * scale;
   const cy = rect.y + (piece.pos.y + off.y + g.center.y) * scale - lift * 10;
   // lift is bucketed so the cache stays small; the vertical offset above stays continuous
@@ -220,37 +237,30 @@ export function drawPiece(ctx, piece, rect, opts = {}) {
   ctx.restore();
 }
 
-/** Dotted ghost path showing where a letter can travel. */
+/** Dotted corridor from an open end showing where the rope's head can travel. */
 export function drawGhostPath(ctx, piece, rect, dir, sEnd, ok, t) {
   const { scale } = rect;
-  const c = piece.center;
+  const toPx = (q) => ({ x: rect.x + (piece.pos.x + q.x) * scale, y: rect.y + (piece.pos.y + q.y) * scale });
+  const a = toPx(dir.headPt0), b = toPx(dir.headAt(sEnd));
   ctx.save();
   ctx.setLineDash([6, 8]);
   ctx.lineDashOffset = -(t / 40) % 14;
   ctx.lineWidth = 3;
   ctx.lineCap = 'round';
   ctx.strokeStyle = ok ? 'rgba(255,255,255,0.85)' : 'rgba(255,90,90,0.8)';
-  ctx.beginPath();
-  const n = Math.max(8, Math.ceil(sEnd / 0.05));
-  let last = null;
-  for (let i = 0; i <= n; i++) {
-    const s = (sEnd * i) / n;
-    const o = dir.disp(s);
-    const px = rect.x + (c.x + o.x) * scale, py = rect.y + (c.y + o.y) * scale;
-    if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
-    last = { x: px, y: py, s };
-  }
-  ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
   ctx.setLineDash([]);
-  if (last) {
-    const tan = dir.tan(sEnd);
-    ctx.translate(last.x, last.y);
-    ctx.rotate(Math.atan2(tan.y, tan.x));
-    ctx.fillStyle = ctx.strokeStyle;
-    ctx.beginPath();
-    if (ok) { ctx.moveTo(10, 0); ctx.lineTo(-4, -7); ctx.lineTo(-4, 7); ctx.closePath(); ctx.fill(); }
-    else { ctx.lineWidth = 3; ctx.moveTo(-6, -6); ctx.lineTo(6, 6); ctx.moveTo(6, -6); ctx.lineTo(-6, 6); ctx.stroke(); }
-  }
+  ctx.translate(b.x, b.y);
+  ctx.rotate(Math.atan2(b.y - a.y, b.x - a.x));
+  ctx.fillStyle = ctx.strokeStyle;
+  ctx.beginPath();
+  if (ok) { ctx.moveTo(10, 0); ctx.lineTo(-4, -7); ctx.lineTo(-4, 7); ctx.closePath(); ctx.fill(); }
+  else { ctx.lineWidth = 3; ctx.moveTo(-6, -6); ctx.lineTo(6, 6); ctx.moveTo(6, -6); ctx.lineTo(-6, 6); ctx.stroke(); }
+  // mark the open end itself
+  ctx.restore();
+  ctx.save();
+  ctx.fillStyle = ok ? 'rgba(255,255,255,0.9)' : 'rgba(255,90,90,0.9)';
+  ctx.beginPath(); ctx.arc(a.x, a.y, 5, 0, Math.PI * 2); ctx.fill();
   ctx.restore();
 }
 

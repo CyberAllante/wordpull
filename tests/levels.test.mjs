@@ -12,7 +12,7 @@ test('every shipped level is overlap-free, inside the pool and solvable', { time
     assert.equal(board.pieces.map((p) => p.ch).join(''), l.word);
     for (const p of board.pieces) {
       assert.ok(board.insidePool(p), `level ${l.level} ${l.word}: ${p.ch} outside pool`);
-      assert.equal(board.collider(p, null, 0), -1, `level ${l.level} ${l.word}: ${p.ch} overlaps`);
+      assert.equal(board.collider(p, 0), -1, `level ${l.level} ${l.word}: ${p.ch} overlaps`);
       if (board.isFree(p)) loose++;
     }
     const stats = board.solve();

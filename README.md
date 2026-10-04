@@ -1,10 +1,12 @@
 # Word Pool
 
 **Word Pool** is a geometric puzzle disguised as a word game. A word is dropped into a pool as
-chunky 3D letters, packed tight. Your job is to get every letter out — but a letter can only move
-by *drawing itself*: an **I** slides straight, an **L** goes down and then across, a **C** sweeps
-around its own curve, an **S** snakes. If anything is in the way, it bumps and stays put.
-Figure out the order, draw the shapes, clear the word.
+chunky 3D letters, packed tight. Your job is to get every letter out — but a letter is a rope lying
+in a groove shaped like itself. Grab it and draw along its shape and it slides out of its own
+outline: an **S** snakes out of itself, a **C** unspools around its curve, an **E** feeds its
+arms back through its spine. Once the rope leaves the groove it runs straight out of the open end.
+If anything sits in that corridor, it bumps and stays put. Figure out the order, draw the shapes,
+clear the word.
 
 > Think *Block Away / Cube Away 3D*, but every block is a letter and the letter's own typography
 > is the track it has to travel on.
@@ -13,7 +15,7 @@ Figure out the order, draw the shapes, clear the word.
 
 | Action | What happens |
 | --- | --- |
-| Drag a letter along the shape of its stroke (from either end) | The letter follows your finger along that path and pops out once it clears the pool. |
+| Grab a letter and draw along its shape toward an open end | The rope slides along its own groove, then straight out of that end, and pops once it clears the pool. |
 | Drag it into another letter | **Bump.** The blocker flashes red; the letter springs back. Something else has to move first. |
 | Tap a letter | If it is touching nothing, it **pops** straight out. Closed letters like **O** / **o** can *only* leave this way. If it is still held, the neighbours holding it flash. |
 | Hold a letter | Shows ghost paths: white dotted = clear exit, red = where it gets blocked. |
@@ -47,17 +49,17 @@ Capacitor SDK), define coin-pack products in App Store Connect, and on a verifie
 can slot into the same place as "watch to continue" if you want them.
 
 Uppercase and lowercase glyphs are different puzzle pieces (**A** vs **a**, **G** vs **g**), and
-later levels mix them. Pulling direction is decided by the letter's geometry:
+later levels mix them. Every glyph is one continuous stroke (with retraces where a pen would lift,
+like the middle arm of an **E**), and its *open ends* decide where it can leave:
 
-| Letter | Track |
+| Letter | Open ends |
 | --- | --- |
-| I, l, T (stem) | straight line |
-| L, Z, N, M, W, V | polyline with corners |
-| C, c, U, J | sweeps along its arc |
-| S, s | the full S curve |
-| e, G, h, n, m, r, t, f, g, j | stroke + hook/arch |
-| A, Y, K, k | multiple tracks (e.g. the Λ of the A, each arm of the Y) |
-| O, o | no track — closed; pop only once free |
+| I, L, C, S, U, V, W, Z, c, s, v, w, z … | both ends: pull from either |
+| E, F, H, K, T, X, Y, R, f, h, k, m, t, u, x, y | both ends, with the extra strokes folded into the rope |
+| A, B, D, P, G, Q, a, b, d, p, q | one end — the other finishes inside the letter (a bowl, a crossbar) |
+| e, g | one end: the tail / the hook |
+| i, j | both ends; the dot rides along |
+| O, o | none — closed; pop only once free |
 
 ## Why this is interesting to build: the algorithm
 
@@ -65,13 +67,15 @@ Levels are **not hand-made**. Every level is generated from a word:
 
 1. **Word engine** (`web/js/words.js`, `generator.js#levelSpec`) picks a word by length and a case
    mode (upper, Title, lower, mixed) for the level number.
-2. **Glyph engine** (`web/js/glyphs.js`) turns each character into a monoline stroke skeleton plus
-   its *tracks* — the paths the player has to draw. Rendering, collision and movement all come from
-   the same stroke data, so what you see is exactly what collides.
+2. **Glyph engine** (`web/js/glyphs.js`) defines each character as one continuous rope path with
+   open/closed ends. The engine (`engine.js`) builds a *rail* per open end (the path plus a straight
+   exit ray); at progress *s* the rope occupies rail length [s, s+L]. Rendering, collision and
+   movement all come from the same path, so what you see is exactly what collides.
 3. **Puzzle generator** (`web/js/generator.js#pack`) uses *reverse construction*: letters are
    inserted in the reverse of a removal order, each one dropped only where it has a clear exit
    given the letters already present. Removing a letter never blocks anything, so the reversed
-   insertion order is a guaranteed solution. Closed letters go in first so they end up free.
+   insertion order is a guaranteed solution. Candidates are aimed into earlier letters' exit
+   corridors so each letter tends to lock the one placed before it. Closed letters go in first.
 4. **Solver** (`web/js/engine.js#Board.solve`) re-verifies every candidate, counts how many letters
    are movable at each step and turns that into a hardness score. The generator keeps the candidate
    closest to the level's target hardness. Hardness grows with the level number.

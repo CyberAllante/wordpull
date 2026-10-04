@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { glyph, SUPPORTED } from '../web/js/glyphs.js';
 import { Board, Piece } from '../web/js/engine.js';
 import { generateLevel, levelSpec } from '../web/js/generator.js';
-import { segSegDist2, polyAt, polyLength } from '../web/js/geom.js';
+import { segSegDist2, polyLength } from '../web/js/geom.js';
 
 test('segment distance basics', () => {
   const d = Math.sqrt(segSegDist2({ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 0, y: 1 }, { x: 1, y: 1 }));
@@ -20,52 +20,56 @@ test('segment distance basics', () => {
   assert.ok(sym < 1e-12, 'segment distance is symmetric');
 });
 
-test('every glyph is well formed', () => {
+test('every glyph is one continuous rope with sane ends', () => {
   for (const ch of SUPPORTED) {
     const g = glyph(ch);
     assert.ok(g.w > 0.1 && g.h > 0.5, `${ch} has a sane box`);
-    assert.ok(g.segs.length > 0, `${ch} has segments`);
-    for (const t of g.tracks) {
-      assert.ok(polyLength(t) > 0.3, `${ch} track long enough`);
-      // tracks must be continuous (no jumps bigger than a stroke)
-      for (let i = 1; i < t.length; i++) {
-        const d = Math.hypot(t[i].x - t[i - 1].x, t[i].y - t[i - 1].y);
-        assert.ok(d < 1.3, `${ch} track segment ${i} jumps ${d.toFixed(2)}`);
-      }
+    assert.ok(g.L > 0.5, `${ch} path long enough`);
+    for (let i = 1; i < g.path.length; i++) {
+      const d = Math.hypot(g.path[i].x - g.path[i - 1].x, g.path[i].y - g.path[i - 1].y);
+      assert.ok(d < 1.3, `${ch} path jumps ${d.toFixed(2)} at ${i}`);
     }
-    if (!'Oo'.includes(ch)) assert.ok(g.tracks.length > 0, `${ch} has a track`);
+    if ('Oo'.includes(ch)) assert.ok(!g.openStart && !g.openEnd, `${ch} is closed`);
+    else assert.ok(g.openStart || g.openEnd, `${ch} has an open end`);
   }
-  assert.equal(glyph('O').tracks.length, 0);
 });
 
-test('pull directions move away from the letter and exit an empty pool', () => {
+test('a rope slides out of its own shape and exits an empty pool', () => {
   const b = new Board(4, 4);
-  const p = new Piece('L', { x: 1.5, y: 1.5 }, '#fff');
+  const p = new Piece('S', { x: 1.5, y: 1.5 }, '#fff');
   b.pieces.push(p);
   assert.equal(p.dirs.length, 2);
   for (const d of p.dirs) {
     const r = b.sweep(p, d);
     assert.equal(r.sBlock, Infinity);
     assert.ok(r.sExit < Infinity && r.sExit > 1);
-    const { tan } = polyAt(d.poly, 0.01);
-    assert.ok(Math.abs(Math.hypot(tan.x, tan.y) - 1) < 1e-6);
+    // at rest the body is the glyph path; half way it is still the same length
+    const b0 = d.bodyAt(0), b1 = d.bodyAt(0.7);
+    assert.ok(Math.abs(polyLength(b0.pts) - p.g.L) < 1e-6);
+    assert.ok(Math.abs(polyLength(b1.pts) - p.g.L) < 1e-6);
+    // the head moves along the exit tangent once past the groove
+    const h1 = d.headAt(p.g.L + 0.5), h2 = d.headAt(p.g.L + 1.0);
+    const t = { x: h2.x - h1.x, y: h2.y - h1.y };
+    assert.ok(Math.abs(t.x / 0.5 - d.exitTan.x) < 1e-6 && Math.abs(t.y / 0.5 - d.exitTan.y) < 1e-6);
   }
+  const pOnly = new Piece('P', { x: 0, y: 0 }, '#fff');
+  assert.equal(pOnly.dirs.length, 1, 'P pulls only from its stem end');
+  assert.equal(new Piece('O', { x: 0, y: 0 }, '#fff').dirs.length, 0);
 });
 
 test('a letter in the way blocks the pull and is reported', () => {
   const b = new Board(6, 6);
-  const I = new Piece('I', { x: 2, y: 1 }, '#fff');       // vertical bar
-  const T = new Piece('T', { x: 1.6, y: 2.4 }, '#fff');   // right below it
+  const I = new Piece('I', { x: 2, y: 1 }, '#fff');
+  const T = new Piece('T', { x: 1.6, y: 2.4 }, '#fff');
   b.pieces.push(I, T);
-  const down = I.dirs.find((d) => d.startTan.y > 0.9);
+  const down = I.dirs.find((d) => d.exitTan.y > 0.9);
   const r = b.sweep(I, down);
   assert.equal(r.blocker, 1, 'the T blocks the downward pull');
   assert.ok(r.sBlock < 0.6);
-  const up = I.dirs.find((d) => d.startTan.y < -0.9);
+  const up = I.dirs.find((d) => d.exitTan.y < -0.9);
   assert.equal(b.sweep(I, up).sBlock, Infinity, 'upward is clear');
   assert.ok(b.removable(I).pull.length === 1);
-  const stats = b.solve();
-  assert.ok(stats.solved);
+  assert.ok(b.solve().solved);
 });
 
 test('closed letters can only be popped once free', () => {
@@ -88,7 +92,7 @@ test('levels 1-40 generate, are solvable and deterministic', { timeout: 300000 }
     assert.equal(board.pieces.length, word.length);
     assert.equal(word.length, levelSpec(lvl).length);
     for (const p of board.pieces) assert.ok(board.insidePool(p), `${word}: ${p.ch} starts inside the pool`);
-    for (const p of board.pieces) assert.equal(board.collider(p, null, 0), -1, `${word}: ${p.ch} overlaps nothing`);
+    for (const p of board.pieces) assert.equal(board.collider(p, 0), -1, `${word}: ${p.ch} overlaps nothing`);
     // deterministic
     const again = generateLevel(lvl);
     assert.equal(again.word, word);

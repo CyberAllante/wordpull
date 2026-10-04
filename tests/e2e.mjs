@@ -17,13 +17,14 @@ async function dragPath(page, pts) {
   for (const q of rest) { await page.mouse.move(q.x, q.y); await wait(8); }
   await page.mouse.up();
 }
-// Build the pointer path (CSS px) that pulls `piece` along `dir` for `sEnd` units.
+// Build the pointer path (CSS px) that drags `piece` along `dir` for `sEnd` units: grab the rope just
+// behind its open end and follow that material point along the rail (through the groove, then out).
 const pathFor = `(p, dir, sEnd) => {
   const rect = window.__wp.rect;
-  const toPx = (u) => ({ x: rect.x + u.x * rect.scale, y: rect.y + u.y * rect.scale });
-  const grab = { x: p.pos.x + dir.startPt.x + dir.startTan.x * 0.12, y: p.pos.y + dir.startPt.y + dir.startTan.y * 0.12 };
+  const toPx = (u) => ({ x: rect.x + (p.pos.x + u.x) * rect.scale, y: rect.y + (p.pos.y + u.y) * rect.scale });
+  const u0 = Math.max(0, dir.L - 0.12);
   const n = Math.max(12, Math.ceil(sEnd / 0.04)), pts = [];
-  for (let i = 0; i <= n; i++) { const o = dir.disp((sEnd * i) / n); pts.push(toPx({ x: grab.x + o.x, y: grab.y + o.y })); }
+  for (let i = 0; i <= n; i++) pts.push(toPx(dir.railAt(u0 + (sEnd * i) / n)));
   return pts;
 }`;
 

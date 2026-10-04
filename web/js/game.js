@@ -4,7 +4,7 @@ import { STROKE_R } from './glyphs.js';
 import { Piece, Board } from './engine.js';
 import { getLevel, loadShippedLevels } from './levels.js';
 import { PALETTE, generateLevel, dailyWord } from './generator.js';
-import { layoutPool, drawScene, drawRipples, drawPiece, drawGhostPath, Particles, clearSpriteCache } from './render.js';
+import { layoutPool, drawScene, drawRipples, drawPiece, drawGhostPath, Particles, clearSpriteCache, roundRect } from './render.js';
 import { sfx, haptic, settings } from './audio.js';
 import * as E from './economy.js';
 import { THEMES, themeById } from './themes.js';
@@ -375,7 +375,7 @@ export class Game {
       const r = this.board.removable(p);
       if (!r) continue;
       this.hintsUsed++;
-      this.ghost = { piece: p, until: performance.now() + 3000, dirs: r.pull ? r.pull.map((d) => ({ dir: d.dir, sEnd: d.sExit, ok: true })) : [], pop: !!r.pop };
+      this.ghost = { piece: p, until: performance.now() + 3000, dirs: r.pull ? r.pull.map((d) => ({ dir: d.dir, sEnd: this.board.headExitS(p, d.dir), ok: true })) : [], pop: !!r.pop };
       this.flash(p, 1000, 'rgba(255,255,255,0.7)');
       return;
     }
@@ -385,7 +385,7 @@ export class Game {
     for (const p of this.board.active) {
       const r = this.board.removable(p);
       if (!r) continue;
-      items.push({ piece: p, dirs: r.pull ? r.pull.map((d) => ({ dir: d.dir, sEnd: d.sExit, ok: true })) : [], pop: !!r.pop });
+      items.push({ piece: p, dirs: r.pull ? r.pull.map((d) => ({ dir: d.dir, sEnd: this.board.headExitS(p, d.dir), ok: true })) : [], pop: !!r.pop });
       this.flash(p, 1200, 'rgba(255,255,255,0.6)');
     }
     this.reveal = { items, until: performance.now() + 6000 };
@@ -441,21 +441,42 @@ export class Game {
       return;
     }
     this.canvas.setPointerCapture?.(e.pointerId);
-    this.drag = { piece: p, id: e.pointerId, start: u, last: u, dir: null, s: 0, t0: performance.now(), moved: false, lastBump: 0, grab: sub(u, p.pos) };
+    const local = sub(u, p.pos);
+    this.drag = { piece: p, id: e.pointerId, start: u, last: u, dir: null, s: 0, t0: performance.now(), moved: false, lastBump: 0, grab: local, p0: this.arcPosOn(p, local) };
     this.ghost = null;
     sfx.grab(); haptic('light');
   }
-  chooseDir(d) {
-    const { piece, grab } = this.drag;
-    const nd = { x: d.x / (len(d) || 1), y: d.y / (len(d) || 1) };
+  /** Arc position along the glyph's rest path nearest to a glyph-local point. */
+  arcPosOn(piece, q) {
+    const path = piece.g.path;
+    let best = 0, bestD = Infinity, acc = 0;
+    for (let i = 1; i < path.length; i++) {
+      const a = path[i - 1], b = path[i];
+      const abx = b.x - a.x, aby = b.y - a.y, l2 = abx * abx + aby * aby;
+      const t = l2 > 1e-12 ? clamp(((q.x - a.x) * abx + (q.y - a.y) * aby) / l2, 0, 1) : 0;
+      const d = Math.hypot(q.x - (a.x + abx * t), q.y - (a.y + aby * t));
+      const segLen = Math.sqrt(l2);
+      if (d < bestD) { bestD = d; best = acc + segLen * t; }
+      acc += segLen;
+    }
+    return best;
+  }
+  /** Material position of the grab point on a direction's rail. */
+  u0For(dir) { return dir.end === 'end' ? this.drag.p0 : dir.L - this.drag.p0; }
+  chooseDir(T) {
+    const { piece } = this.drag;
+    if (!piece.dirs.length) return false;
+    const nd = { x: T.x / (len(T) || 1), y: T.y / (len(T) || 1) };
     let best = null, bestScore = -Infinity;
     for (const dir of piece.dirs) {
-      const prox = 1 - clamp(len(sub(grab, dir.startPt)) / (2 * piece.g.radius), 0, 1);
-      const score = dot(nd, dir.startTan) + 0.25 * prox;
+      const u0 = this.u0For(dir);
+      // which way does the finger move along the rope? positive = toward this open end
+      const score = dot(nd, dir.tanAt(Math.min(u0 + 0.05, dir.railL)));
       if (score > bestScore) { bestScore = score; best = dir; }
     }
-    if (!best || bestScore < 0.15) return false;
+    if (!best || bestScore < 0.1) return false;
     this.drag.dir = best;
+    this.drag.u0 = this.u0For(best);
     this.drag.sweep = this.board.sweep(piece, best);
     this.drag.s = 0;
     return true;
@@ -474,14 +495,18 @@ export class Game {
     }
     const dir = d.dir, sw = d.sweep;
     const limit = sw.sBlock < Infinity ? sw.sBlock : sw.sExit;
+    // The grabbed point of the rope sits at rail position u0 + s. Find the progress whose grabbed
+    // point is closest to the finger, searching a window around the current progress so the rope
+    // follows the finger through corners and retraces.
+    const F = sub(u, d.piece.pos);
     const lo = Math.max(0, d.s - 0.4), hi = Math.min(limit, d.s + Math.max(0.6, len(delta) * 2.5));
     let best = d.s, bestD = Infinity;
-    const consider = (s) => { const o = dir.disp(s); const dd = (o.x - T.x) ** 2 + (o.y - T.y) ** 2; if (dd < bestD - 1e-12) { bestD = dd; best = s; } };
+    const consider = (s) => { const q = dir.railAt(d.u0 + s); const dd = (q.x - F.x) ** 2 + (q.y - F.y) ** 2; if (dd < bestD - 1e-12) { bestD = dd; best = s; } };
     for (let s = lo; s < hi; s += 0.01) consider(s);
     consider(hi);
-    if (best <= 1e-6 && dot(T, dir.startTan) < -0.03 && len(T) > 0.09) { d.dir = null; d.s = 0; if (!this.chooseDir(T)) d.start = u; return; }
+    if (best <= 1e-6 && dot(T, dir.tanAt(d.u0 + 0.05)) < -0.03 && len(T) > 0.09) { d.dir = null; d.s = 0; if (!this.chooseDir(T)) d.start = u; return; }
     if (best >= limit - 1e-6 && sw.sBlock < Infinity) {
-      const over = dot(sub(T, dir.disp(limit)), dir.tan(limit));
+      const over = dot(sub(F, dir.railAt(d.u0 + limit)), dir.tanAt(d.u0 + limit));
       if (over > 0.03) { if (!d.pushing) this.bump(d, sw.blocker); d.pushing = true; } else d.pushing = false;
     } else d.pushing = false;
     d.s = best;
@@ -527,7 +552,7 @@ export class Game {
         for (const q of this.board.active) {
           if (q === p) continue;
           const tmp = new Board(1, 1); tmp.pieces = [q];
-          if (tmp.collider(p, null, 0.22) >= 0) this.flash(q, 500, 'rgba(255,120,120,0.75)');
+          if (tmp.collider(p, 0.22) >= 0) this.flash(q, 500, 'rgba(255,120,120,0.75)');
         }
       } else if (!d.moved) this.showGhostFor(p);
       return;
@@ -540,7 +565,7 @@ export class Game {
     }
   }
   showGhostFor(p) {
-    const dirs = p.dirs.map((dir) => { const sw = this.board.sweep(p, dir); return sw.sBlock === Infinity ? { dir, sEnd: sw.sExit, ok: true } : { dir, sEnd: sw.sBlock, ok: false }; });
+    const dirs = p.dirs.map((dir) => { const sw = this.board.sweep(p, dir); return sw.sBlock === Infinity ? { dir, sEnd: this.board.headExitS(p, dir), ok: true } : { dir, sEnd: sw.sBlock, ok: false }; });
     this.ghost = { piece: p, dirs, until: performance.now() + 2200, pop: this.board.isFree(p) };
   }
 
@@ -550,9 +575,9 @@ export class Game {
     p.removed = true;
     this.anims = this.anims.filter((a) => a.piece !== p);
     if (this.drag && this.drag.piece === p) this.drag = null;
-    const off = dir.disp(s), c = p.center;
-    this.anims.push({ type: 'pop', piece: p, off, t0: performance.now(), dur: 320 });
-    this.particles.burst(this.rect.x + (c.x + off.x) * this.rect.scale, this.rect.y + (c.y + off.y) * this.rect.scale, p.color, 16);
+    const head = dir.headAt(s);
+    this.anims.push({ type: 'pop', piece: p, dir, s, t0: performance.now(), dur: 320 });
+    this.particles.burst(this.rect.x + (p.pos.x + head.x) * this.rect.scale, this.rect.y + (p.pos.y + head.y) * this.rect.scale, p.color, 16);
     sfx.pop(); haptic('medium');
     this.afterRemoval();
   }
@@ -560,7 +585,7 @@ export class Game {
     if (p.removed) return;
     p.removed = true;
     const c = p.center;
-    this.anims.push({ type: 'pop', piece: p, off: { x: 0, y: 0 }, t0: performance.now(), dur: 360 });
+    this.anims.push({ type: 'pop', piece: p, t0: performance.now(), dur: 360 });
     this.particles.burst(this.rect.x + c.x * this.rect.scale, this.rect.y + c.y * this.rect.scale, p.color, forced ? 34 : 22);
     sfx.pop(); haptic('medium');
     this.afterRemoval();
@@ -649,17 +674,19 @@ export class Game {
     const progress = (a) => clamp((now - a.t0) / a.dur, 0, 1);
     const dragging = this.drag && this.drag.dir ? this.drag.piece : null;
     const drawOne = (p) => {
-      let off = { x: 0, y: 0 }, lift = 0, alpha = 1, scaleMul = 1;
+      let off = { x: 0, y: 0 }, lift = 0, alpha = 1, scaleMul = 1, body = null;
       const anim = this.anims.find((a) => a.piece === p);
       if (anim && anim.type === 'slide') {
         const e = (anim.ease || easeOut)(progress(anim));
-        off = anim.dir.disp(Math.max(0, anim.from + (anim.to - anim.from) * e)); lift = 0.6;
+        body = anim.dir.bodyAt(Math.max(0, anim.from + (anim.to - anim.from) * e)); lift = 0.6;
       } else if (anim && anim.type === 'pop') {
-        const k = progress(anim); off = anim.off; scaleMul = 1 + k * 0.5; alpha = 1 - k; lift = 1 + k * 1.5;
+        const k = progress(anim);
+        alpha = 1 - k; lift = 1 + k * 1.5;
+        if (anim.dir) body = anim.dir.bodyAt(anim.s + k * 0.6); else scaleMul = 1 + k * 0.5;
       } else if (this.drag && this.drag.piece === p) {
         lift = 1;
-        if (this.drag.dir) off = this.drag.dir.disp(this.drag.s);
-        if (this.drag.shake && now - this.drag.shake < 180) off = { x: off.x + Math.sin((now - this.drag.shake) / 14) * 0.02 * (1 - (now - this.drag.shake) / 180), y: off.y };
+        if (this.drag.dir) body = this.drag.dir.bodyAt(this.drag.s);
+        if (this.drag.shake && now - this.drag.shake < 180) off = { x: Math.sin((now - this.drag.shake) / 14) * 0.02 * (1 - (now - this.drag.shake) / 180), y: 0 };
       }
       const f = this.flashes.get(p);
       let flash = 0, flashColor;
@@ -667,7 +694,16 @@ export class Game {
         if (now > f.until) this.flashes.delete(p);
         else { flash = 1 - (now - f.start) / (f.until - f.start); flashColor = f.color.replace(/[\d.]+\)$/, (m) => (parseFloat(m) * flash).toFixed(3) + ')'); }
       }
-      drawPiece(ctx, p, rect, { off, lift, alpha, scaleMul, flash: flash ? 1 : 0, flashColor, dpr: this.dpr });
+      if (body) {
+        // a moving rope slips under the pool rim as it leaves
+        ctx.save();
+        roundRect(ctx, rect.x - 12, rect.y - 12, rect.w + 24, rect.h + 24, Math.min(28, rect.w * 0.08) + 10);
+        ctx.clip();
+        drawPiece(ctx, p, rect, { body, off, lift, alpha, scaleMul, flash: flash ? 1 : 0, flashColor, dpr: this.dpr });
+        ctx.restore();
+      } else {
+        drawPiece(ctx, p, rect, { body, off, lift, alpha, scaleMul, flash: flash ? 1 : 0, flashColor, dpr: this.dpr });
+      }
     };
     const drawGhostSet = (g) => {
       for (const d of g.dirs) drawGhostPath(ctx, g.piece, rect, d.dir, d.sEnd, d.ok, t);
