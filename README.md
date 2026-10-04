@@ -19,7 +19,32 @@ Figure out the order, draw the shapes, clear the word.
 | Hold a letter | Shows ghost paths: white dotted = clear exit, red = where it gets blocked. |
 | 💡 | Highlights a letter that can move right now and its path. |
 
-Three stars: clear the word with at most one bump and no hints.
+Three stars: clear the word with at most one bump and no boosters.
+
+## Meta game
+
+| System | How it works |
+| --- | --- |
+| **Hearts (bumps)** | Each level gives 3 + ⌊letters/2⌋ hearts. Every bump costs one. At zero the round pauses: continue for 🪙 50 (+3 hearts), skip for 🪙 120, retry, or go home. |
+| **Coins 🪙** | Earned per clear (base + word length + star bonus; replays pay 25%). Three perfect clears in a row doubles payouts ("on fire"). Spent on boosters and continues. |
+| **Crowns 👑** | One per level cleared with 3 stars, plus one per daily challenge. Crowns unlock themes. |
+| **Boosters** | 💡 Hint (🪙 30) shows a letter that can escape and its path. 🫧 Pop (🪙 80) removes any letter, blockers or not. 🔍 Reveal (🪙 50) shows every clear exit for 6 s. Using one caps the round at 2 stars. |
+| **Chapters** | 10 levels each, named (Shallows, Tide Pool, Reef…). Clearing all 10 opens a chest: coins + a booster. |
+| **Daily gift** | 7-day login streak: 25, 35, 50, 20+Hint, 75, 30+Pop, 150+Reveal. Miss a day and it restarts. |
+| **Daily challenge** | One long mixed-case word per day, seeded by the date and generated on the device. +🪙 100 and a crown. |
+| **Themes** | Lagoon (default), Candy Shop (5 👑), Lava Vent (15 👑), Midnight Neon (30 👑), Royal Gold (60 👑). Themes recolor letters, pool and background. |
+
+All of this lives in `web/js/economy.js` as pure functions over the save object (tested in
+`tests/economy.test.mjs`), so prices, curves and rewards are one file to tune. Saves migrate from
+the v1 format automatically.
+
+### Real-money purchases
+
+The Shop has a coin-pack section that is informational in this build. For the App Store release,
+add a StoreKit bridge (for example `@capacitor-community/in-app-purchases` or RevenueCat's
+Capacitor SDK), define coin-pack products in App Store Connect, and on a verified purchase call
+`save.coins += pack.coins` followed by `persist()`. Rewarded ads (AdMob via `@capacitor-community/admob`)
+can slot into the same place as "watch to continue" if you want them.
 
 Uppercase and lowercase glyphs are different puzzle pieces (**A** vs **a**, **G** vs **g**), and
 later levels mix them. Pulling direction is decided by the letter's geometry:
@@ -68,12 +93,16 @@ web/                 the game (plain ES modules, no framework, no build step)
   js/levels.js       loads levels.json / falls back to the generator
   js/render.js       pseudo-3D tube letters, pool, ghost paths, particles
   js/audio.js        synthesized sfx + haptics (Capacitor or Vibration API)
-  js/game.js         screens, input (draw-to-pull), animation, persistence
+  js/economy.js      coins, crowns, boosters, hearts, daily rewards, chapters, chests (pure, tested)
+  js/themes.js       unlockable color themes
+  js/game.js         screens, input (draw-to-pull), boosters, modals, animation, persistence
   levels.json        200 pre-generated levels
 tools/build-levels.mjs   regenerate levels.json
 tools/build-single.mjs   bundle everything into dist/wordpool.html
-tests/engine.test.mjs    unit tests (node --test)
-tests/e2e.mjs            Playwright: plays level 1 in headless Chromium at iPhone size
+tests/engine.test.mjs    engine + generator unit tests (node --test)
+tests/economy.test.mjs   economy unit tests
+tests/levels.test.mjs    validates every shipped level
+tests/e2e.mjs            Playwright: claims the daily gift, plays level 1, drains hearts, uses boosters, shops, opens a chest
 ios/                 Capacitor iOS project (Xcode)
 capacitor.config.json
 ```
@@ -111,7 +140,7 @@ Vibration API (which iOS Safari ignores) otherwise.
 
 ## Roadmap ideas
 
-- Daily word, timed mode, streaks
+- Timed "blitz" mode and weekly leaderboards (Game Center)
 - Letter "personality" tweaks (e.g. rotations for very hard levels)
 - Obstacles in the pool (pegs, walls) for late-game difficulty
 - Real-font glyph import (opentype.js) so themed fonts become themed puzzles

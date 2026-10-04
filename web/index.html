@@ -18,50 +18,84 @@
   <div id="app">
     <canvas id="game"></canvas>
 
+    <!-- in-game HUD -->
     <header id="hud" class="hidden">
       <div class="hud-row">
         <button id="btn-home" class="icon" aria-label="Home">‹</button>
-        <div id="hud-level" class="hud-title">Level 1</div>
-        <div class="hud-actions">
-          <button id="btn-hint" class="icon" aria-label="Hint">💡</button>
-          <button id="btn-restart" class="icon" aria-label="Restart">↻</button>
+        <div class="hud-mid">
+          <div id="hud-level" class="hud-title">Level 1</div>
+          <div id="hud-hearts" class="hearts" aria-label="Bumps left"></div>
         </div>
+        <div class="pill coins" id="hud-coins"><span class="ico">🪙</span><span class="val">0</span></div>
       </div>
       <div id="word-row" class="word-row"></div>
       <div id="tutorial" class="tutorial"></div>
     </header>
+    <footer id="boosters" class="hidden">
+      <button class="booster" data-booster="hint"><span class="b-ico">💡</span><span class="b-name">Hint</span><span class="b-count">3</span></button>
+      <button class="booster" data-booster="pop"><span class="b-ico">🫧</span><span class="b-name">Pop</span><span class="b-count">1</span></button>
+      <button class="booster" data-booster="reveal"><span class="b-ico">🔍</span><span class="b-name">Reveal</span><span class="b-count">1</span></button>
+      <button id="btn-restart" class="booster small" aria-label="Restart"><span class="b-ico">↻</span><span class="b-name">Retry</span></button>
+    </footer>
+    <div id="targeting" class="banner hidden"><span>Tap a letter to pop it</span><button id="btn-cancel-target" class="mini">Cancel</button></div>
 
+    <!-- home -->
     <section class="screen active" data-screen="home">
-      <div class="panel">
+      <div class="topbar">
+        <div class="pill coins" id="home-coins"><span class="ico">🪙</span><span class="val">0</span></div>
+        <div class="pill crowns" id="home-crowns"><span class="ico">👑</span><span class="val">0</span></div>
+        <button id="btn-settings" class="icon" aria-label="Settings">⚙︎</button>
+      </div>
+      <div class="panel home">
         <canvas id="title-canvas" class="title-canvas"></canvas>
         <h1 class="sr-only">Word Pool</h1>
-        <p id="home-stats" class="muted">Pull every letter out of the pool.</p>
+        <div id="home-chapter" class="chapter-line"><span class="name">Shallows</span><div class="bar"><i></i></div><span class="count">0/10</span></div>
         <button id="btn-play" class="primary">Play</button>
-        <button id="btn-levels" class="secondary">Levels</button>
-        <div class="settings">
-          <button id="tgl-sound" class="ghost">Sound: On</button>
-          <button id="tgl-haptics" class="ghost">Haptics: On</button>
-          <button id="btn-reset" class="ghost danger">Reset progress</button>
+        <button id="btn-daily-gift" class="gift hidden">🎁 Daily gift ready — tap to open</button>
+        <button id="btn-challenge" class="card challenge">
+          <span class="c-ico">🏆</span>
+          <span class="c-text"><b>Daily Challenge</b><small id="challenge-sub">A long word, mixed case. +100 🪙 and a crown.</small></span>
+          <span class="c-state" id="challenge-state">Play</span>
+        </button>
+        <div class="row">
+          <button id="btn-chapters" class="secondary">📖 Chapters</button>
+          <button id="btn-shop" class="secondary">🛒 Shop</button>
         </div>
+        <p id="home-stats" class="muted"></p>
       </div>
     </section>
 
-    <section class="screen" data-screen="levels">
+    <!-- chapters -->
+    <section class="screen" data-screen="chapters">
       <div class="panel wide">
-        <div class="panel-head">
-          <button id="btn-levels-back" class="icon" aria-label="Back">‹</button>
-          <h2>Levels</h2>
-        </div>
-        <div id="level-grid" class="level-grid"></div>
+        <div class="panel-head"><button id="btn-chapters-back" class="icon" aria-label="Back">‹</button><h2>Chapters</h2><div class="pill crowns small"><span class="ico">👑</span><span class="val" id="chapters-crowns">0</span></div></div>
+        <div id="chapter-list" class="chapter-list"></div>
       </div>
     </section>
 
+    <!-- shop -->
+    <section class="screen" data-screen="shop">
+      <div class="panel wide">
+        <div class="panel-head"><button id="btn-shop-back" class="icon" aria-label="Back">‹</button><h2>Shop</h2><div class="pill coins small" id="shop-coins"><span class="ico">🪙</span><span class="val">0</span></div></div>
+        <h3>Boosters</h3>
+        <div id="shop-boosters" class="shop-list"></div>
+        <h3>Themes <small class="muted">unlock with crowns 👑</small></h3>
+        <div id="shop-themes" class="shop-list"></div>
+        <h3>Coin packs</h3>
+        <div class="shop-note">Coin packs are sold through the App Store in the released build. In this build you earn coins by clearing words, daily gifts and chapter chests.</div>
+      </div>
+    </section>
+
+    <!-- win -->
     <section class="screen" data-screen="win">
       <div class="panel win">
-        <div class="eyebrow">Word cleared</div>
+        <div class="eyebrow" id="win-eyebrow">Word cleared</div>
         <div id="win-word" class="win-word">WORD</div>
         <div id="win-stars" class="stars">★★★</div>
-        <div id="win-meta" class="muted">12s · 0 bumps</div>
+        <div id="win-crown" class="crown-badge hidden">👑 Perfect clear — crown earned</div>
+        <div id="win-coins" class="coin-earn"><span class="ico">🪙</span><span class="val">+0</span><span id="win-fire" class="fire hidden">🔥 streak ×2</span></div>
+        <div id="win-meta" class="muted"></div>
+        <div id="win-chapter" class="chapter-line"><span class="name"></span><div class="bar"><i></i></div><span class="count"></span></div>
         <button id="btn-next" class="primary">Next level</button>
         <div class="row">
           <button id="btn-win-replay" class="secondary">Replay</button>
@@ -69,6 +103,17 @@
         </div>
       </div>
     </section>
+
+    <!-- generic modal -->
+    <div id="modal" class="modal hidden" role="dialog" aria-modal="true">
+      <div class="modal-card">
+        <div id="modal-title" class="modal-title"></div>
+        <div id="modal-body" class="modal-body"></div>
+        <div id="modal-actions" class="modal-actions"></div>
+      </div>
+    </div>
+    <div id="fly-layer"></div>
+    <div id="toast" class="toast hidden"></div>
   </div>
   <script type="module" src="js/main.js"></script>
 </body>

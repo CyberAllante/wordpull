@@ -26,10 +26,10 @@ export function layoutPool(board, area, pad = 18) {
   return { x: area.x + (area.w - w) / 2, y: area.y + (area.h - h) / 2, w, h, scale };
 }
 
-function paintBackground(ctx, W, H) {
+function paintBackground(ctx, W, H, theme) {
   const g = ctx.createLinearGradient(0, 0, 0, H);
-  g.addColorStop(0, '#0f1b3d');
-  g.addColorStop(1, '#070b1c');
+  g.addColorStop(0, theme.bg[0]);
+  g.addColorStop(1, theme.bg[1]);
   ctx.fillStyle = g;
   ctx.fillRect(0, 0, W, H);
   ctx.save();
@@ -37,7 +37,7 @@ function paintBackground(ctx, W, H) {
   for (let i = 0; i < 3; i++) {
     const x = W * (0.2 + 0.3 * i), y = H * (0.25 + 0.25 * i);
     const rg = ctx.createRadialGradient(x, y, 0, x, y, W * 0.45);
-    rg.addColorStop(0, ['#4c6fff', '#38d9a9', '#da77f2'][i]);
+    rg.addColorStop(0, theme.blobs[i]);
     rg.addColorStop(1, 'rgba(0,0,0,0)');
     ctx.fillStyle = rg;
     ctx.fillRect(0, 0, W, H);
@@ -45,7 +45,7 @@ function paintBackground(ctx, W, H) {
   ctx.restore();
 }
 
-function paintPool(ctx, rect) {
+function paintPool(ctx, rect, theme) {
   const { x, y, w, h } = rect;
   const r = Math.min(28, w * 0.08);
   ctx.save();
@@ -53,21 +53,21 @@ function paintPool(ctx, rect) {
   ctx.shadowBlur = 30;
   ctx.shadowOffsetY = 14;
   roundRect(ctx, x - 10, y - 10, w + 20, h + 20, r + 8);
-  ctx.fillStyle = '#1b2a5a';
+  ctx.fillStyle = theme.rim[1];
   ctx.fill();
   ctx.restore();
   ctx.save();
   roundRect(ctx, x - 10, y - 10, w + 20, h + 20, r + 8);
   const rim = ctx.createLinearGradient(x, y - 10, x, y + h + 10);
-  rim.addColorStop(0, '#2b3f85');
-  rim.addColorStop(1, '#13204a');
+  rim.addColorStop(0, theme.rim[0]);
+  rim.addColorStop(1, theme.rim[1]);
   ctx.fillStyle = rim;
   ctx.fill();
   roundRect(ctx, x, y, w, h, r);
   const g = ctx.createLinearGradient(x, y, x + w, y + h);
-  g.addColorStop(0, '#0d6fa8');
-  g.addColorStop(0.5, '#0a4f8a');
-  g.addColorStop(1, '#083a6b');
+  g.addColorStop(0, theme.pool[0]);
+  g.addColorStop(0.5, theme.pool[1]);
+  g.addColorStop(1, theme.pool[2]);
   ctx.fillStyle = g;
   ctx.fill();
   ctx.clip();
@@ -81,29 +81,29 @@ function paintPool(ctx, rect) {
 
 // The background and pool are static between resizes, so they are painted once into a layer.
 let sceneLayer = null;
-export function drawScene(ctx, W, H, rect, dpr) {
-  const key = `${W}|${H}|${rect ? `${rect.x.toFixed(1)},${rect.y.toFixed(1)},${rect.w.toFixed(1)},${rect.h.toFixed(1)}` : '-'}|${dpr}`;
+export function drawScene(ctx, W, H, rect, dpr, theme) {
+  const key = `${W}|${H}|${rect ? `${rect.x.toFixed(1)},${rect.y.toFixed(1)},${rect.w.toFixed(1)},${rect.h.toFixed(1)}` : '-'}|${dpr}|${theme.id}`;
   if (!sceneLayer || sceneLayer.key !== key) {
     const c = document.createElement('canvas');
     c.width = Math.ceil(W * dpr); c.height = Math.ceil(H * dpr);
     const cx = c.getContext('2d');
     cx.scale(dpr, dpr);
-    paintBackground(cx, W, H);
-    if (rect) paintPool(cx, rect);
+    paintBackground(cx, W, H, theme);
+    if (rect) paintPool(cx, rect, theme);
     sceneLayer = { key, canvas: c };
   }
   ctx.drawImage(sceneLayer.canvas, 0, 0, W, H);
 }
 
 /** Animated caustic ripples on the water (cheap, drawn live). */
-export function drawRipples(ctx, rect, t) {
+export function drawRipples(ctx, rect, t, theme) {
   const { x, y, w, h } = rect;
   const r = Math.min(28, w * 0.08);
   ctx.save();
   roundRect(ctx, x, y, w, h, r);
   ctx.clip();
   ctx.globalAlpha = 0.09;
-  ctx.strokeStyle = '#bff3ff';
+  ctx.strokeStyle = theme.ripple;
   ctx.lineWidth = 2;
   for (let i = 0; i < 7; i++) {
     ctx.beginPath();

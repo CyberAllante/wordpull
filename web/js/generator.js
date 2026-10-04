@@ -143,7 +143,7 @@ function piecesTouch(a, b) {
  */
 export function generateLevel(level, opts = {}) {
   const spec = { ...levelSpec(level), ...opts };
-  const r = rng(0x5EED + level * 1013);
+  const r = rng(opts.seed != null ? opts.seed : 0x5EED + level * 1013);
   const word = opts.word || pickWord(level, r);
   const candidates = [];
   let density = spec.density;
@@ -165,4 +165,11 @@ export function generateLevel(level, opts = {}) {
   });
   const best = candidates[0];
   return { level, word, board: best.board, stats: { ...best.stats, loose: best.loose, spec } };
+}
+
+/** Daily challenge: a long mixed-case word chosen from the date seed. */
+export function dailyWord(seed) {
+  const r = rng(seed);
+  const list = WORDS[r() < 0.5 ? 8 : 9];
+  return applyCase(list[r.int(list.length)], 'mixed', r);
 }

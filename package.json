@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "start": "npx http-server web -p 8080 -c-1",
-    "test": "node --test tests/engine.test.mjs tests/levels.test.mjs",
+    "test": "node --test tests/engine.test.mjs tests/economy.test.mjs tests/levels.test.mjs",
     "test:e2e": "node tests/e2e.mjs",
     "build:levels": "node tools/build-levels.mjs 200",
     "build:single": "node tools/build-single.mjs",

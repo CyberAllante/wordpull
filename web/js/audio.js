@@ -33,6 +33,11 @@ export const sfx = {
   back() { tone({ f0: 400, f1: 260, dur: 0.1, gain: 0.05 }); },
   tap() { tone({ f0: 700, f1: 700, dur: 0.04, gain: 0.04 }); },
   win() { [523, 659, 784, 1047].forEach((f, i) => tone({ type: 'triangle', f0: f, f1: f, dur: 0.25, gain: 0.12, when: i * 0.09 })); },
+  coin(i = 0) { tone({ type: 'square', f0: 1200, f1: 1800, dur: 0.07, gain: 0.05, when: i * 0.05 }); },
+  chest() { [392, 523, 659, 784, 1047, 1319].forEach((f, i) => tone({ type: 'triangle', f0: f, f1: f * 1.01, dur: 0.3, gain: 0.1, when: i * 0.07 })); },
+  fail() { [330, 262, 196].forEach((f, i) => tone({ type: 'sawtooth', f0: f, f1: f * 0.9, dur: 0.25, gain: 0.06, when: i * 0.14 })); },
+  booster() { tone({ f0: 400, f1: 1600, dur: 0.22, gain: 0.1 }); tone({ type: 'triangle', f0: 1600, f1: 2400, dur: 0.15, gain: 0.05, when: 0.1 }); },
+  crown() { [784, 988, 1175, 1568].forEach((f, i) => tone({ type: 'sine', f0: f, f1: f, dur: 0.4, gain: 0.1, when: i * 0.06 })); },
 };
 
 export function haptic(kind = 'light') {
